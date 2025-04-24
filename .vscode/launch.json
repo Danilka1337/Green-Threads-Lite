@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/nikit/OneDrive/Рабочий стол/Green-Threads",
-      "program": "c:/Users/nikit/OneDrive/Рабочий стол/Green-Threads/build/Debug/outDebug",
+      "cwd": "c:/Users/Danil/OneDrive/desktop/Green-Threads",
+      "program": "c:/Users/Danil/OneDrive/desktop/Green-Threads/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
