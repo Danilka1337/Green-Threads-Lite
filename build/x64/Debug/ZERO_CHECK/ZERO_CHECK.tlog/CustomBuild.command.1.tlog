@@ -1,0 +1,10 @@
+^C:\USERS\NIKIT\ONEDRIVE\РАБОЧИЙ СТОЛ\GREEN-THREADS-LITE\BUILD\CMAKEFILES\8DE098F6F4BB748B7BA4DDFBC0A22890\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" "-SC:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite" "-BC:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build" --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file "C:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build/GreenThreadsLite.sln"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

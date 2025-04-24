@@ -1,45 +1,46 @@
 #pragma once
 
-#include "GreenThread.hpp"
-#include <memory>
 #include <queue>
+#include <memory>
+#include <functional>
 #include <mutex>
-#include <chrono>
+#include <condition_variable>
 #include <atomic>
+#include <thread>
+#include <vector>
+#include <windows.h>
 
 namespace GreenThreads {
+
+class GreenThread;
 
 class Scheduler {
 public:
     static Scheduler& getInstance();
 
-    void spawn(GreenThread::Function func, ThreadPriority priority = ThreadPriority::NORMAL);
-    void run();
+    void spawn(std::function<void()> func);
     void yield();
-    void schedule();
-    void sleep_for(std::chrono::milliseconds duration);
-    void sleep_until(std::chrono::steady_clock::time_point time);
-    std::shared_ptr<GreenThread> getCurrentThread() const;
-    size_t getThreadCount() const;
+    void run();
+    void stop();
 
-private:
-    Scheduler() = default;
-    ~Scheduler() = default;
     Scheduler(const Scheduler&) = delete;
     Scheduler& operator=(const Scheduler&) = delete;
 
-    struct ThreadEntry {
-        std::shared_ptr<GreenThread> thread;
-        std::chrono::steady_clock::time_point wakeupTime;
-        bool operator<(const ThreadEntry& other) const {
-            return wakeupTime > other.wakeupTime;
-        }
-    };
+private:
+    Scheduler();
+    ~Scheduler();
 
-    std::priority_queue<ThreadEntry> readyQueue_;
+    void schedule();
+    void threadFunction();
+
+    std::queue<std::shared_ptr<GreenThread>> readyQueue_;
     std::shared_ptr<GreenThread> currentThread_;
-    std::mutex schedulerMutex_;
-    std::atomic<size_t> threadCount_{0};
+    std::mutex queueMutex_;
+    std::condition_variable queueCV_;
+    std::atomic<bool> running_{false};
+    std::vector<std::thread> workerThreads_;
+    LPVOID mainFiber_{nullptr};
+    static constexpr size_t MAX_THREADS = 4;
 };
 
 } // namespace GreenThreads 

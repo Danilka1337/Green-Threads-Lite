@@ -2,59 +2,40 @@
 
 #include <functional>
 #include <memory>
-#include <atomic>
-#include <cstdint>
 #include <windows.h>
+#include <stdexcept>
 
 namespace GreenThreads {
 
-class Scheduler;
-class Mutex;
-class ConditionVariable;
-
-enum class ThreadPriority {
-    LOW,
-    NORMAL,
-    HIGH
-};
-
 class GreenThread {
 public:
-    using Function = std::function<void()>;
-    using ThreadId = uint64_t;
+    using ThreadFunction = std::function<void()>;
 
-    GreenThread(Function func, ThreadPriority priority = ThreadPriority::NORMAL);
+    explicit GreenThread(ThreadFunction func);
     ~GreenThread();
 
-    void yield();
+    GreenThread(const GreenThread&) = delete;
+    GreenThread& operator=(const GreenThread&) = delete;
+    GreenThread(GreenThread&&) = delete;
+    GreenThread& operator=(GreenThread&&) = delete;
+
     void resume();
-    void suspend();
+
     bool isFinished() const;
-    ThreadId getId() const;
-    ThreadPriority getPriority() const;
-    void setPriority(ThreadPriority priority);
-    void join();
-    void detach();
-    bool isJoinable() const;
+
+    static GreenThread* current();
 
 private:
+    static void WINAPI FiberStart(LPVOID param);
+    void run();
+
+    ThreadFunction func_;
+    LPVOID fiber_;
+    bool finished_{false};
+    static thread_local GreenThread* currentThread_;
+    static thread_local LPVOID currentFiber_;
+
     friend class Scheduler;
-    friend class Mutex;
-    friend class ConditionVariable;
-    
-    static DWORD WINAPI ThreadStart(LPVOID param);
-    
-    Function func_;
-    bool finished_;
-    bool joinable_;
-    ThreadId id_;
-    ThreadPriority priority_;
-    static std::atomic<ThreadId> nextId_;
-    
-    HANDLE threadHandle_;
-    CONTEXT context_;
-    LPVOID stack_;
-    static constexpr size_t STACK_SIZE = 64 * 1024;
 };
 
 } // namespace GreenThreads 
