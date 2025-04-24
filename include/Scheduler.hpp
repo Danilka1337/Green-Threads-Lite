@@ -1,13 +1,9 @@
 #pragma once
 
-#include <queue>
+#include <deque>
 #include <memory>
-#include <functional>
 #include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include <thread>
-#include <vector>
+#include <set>
 #include <windows.h>
 
 namespace GreenThreads {
@@ -16,31 +12,33 @@ class GreenThread;
 
 class Scheduler {
 public:
-    static Scheduler& getInstance();
-
-    void spawn(std::function<void()> func);
-    void yield();
-    void run();
-    void stop();
-
+    static Scheduler& instance();
+    
     Scheduler(const Scheduler&) = delete;
     Scheduler& operator=(const Scheduler&) = delete;
 
-private:
-    Scheduler();
     ~Scheduler();
 
-    void schedule();
-    void threadFunction();
+    void addThread(std::shared_ptr<GreenThread> thread);
+    void start();
+    void stop();
+    void run();
+    void yield();
+    
+    LPVOID getSchedulerFiber() const;
+    std::shared_ptr<GreenThread> getCurrentThread() const;
 
-    std::queue<std::shared_ptr<GreenThread>> readyQueue_;
-    std::shared_ptr<GreenThread> currentThread_;
+private:
+    Scheduler();
+    
+    static void WINAPI SchedulerFiberStart(LPVOID param);
+
+    std::deque<std::shared_ptr<GreenThread>> readyQueue_;
+    std::set<std::shared_ptr<GreenThread>> runningThreads_;
     std::mutex queueMutex_;
-    std::condition_variable queueCV_;
-    std::atomic<bool> running_{false};
-    std::vector<std::thread> workerThreads_;
-    LPVOID mainFiber_{nullptr};
-    static constexpr size_t MAX_THREADS = 4;
+    LPVOID schedulerFiber_;
+    std::weak_ptr<GreenThread> currentThread_;
+    bool running_;
 };
 
 } // namespace GreenThreads 
