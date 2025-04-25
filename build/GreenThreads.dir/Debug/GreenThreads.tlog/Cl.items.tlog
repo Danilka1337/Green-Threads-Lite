@@ -1,2 +1,4 @@
 C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\src\GreenThread.cpp;C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\build\GreenThreads.dir\Debug\GreenThread.obj
 C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\src\Scheduler.cpp;C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\build\GreenThreads.dir\Debug\Scheduler.obj
+C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\src\ConditionVariable.cpp;C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\build\GreenThreads.dir\Debug\ConditionVariable.obj
+C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\src\Mutex.cpp;C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\build\GreenThreads.dir\Debug\Mutex.obj

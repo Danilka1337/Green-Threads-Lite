@@ -7,6 +7,12 @@
     <ClCompile Include="C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\src\Scheduler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\src\ConditionVariable.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\src\Mutex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="C:\Users\nikit\OneDrive\Рабочий стол\Green-Threads-lite\CMakeLists.txt" />

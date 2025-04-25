@@ -1,5 +1,5 @@
 C:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build/CMakeFiles/GreenThreads.dir
-C:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build/CMakeFiles/simple_test.dir
+C:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build/CMakeFiles/advanced_example.dir
 C:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build/CMakeFiles/INSTALL.dir
 C:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build/CMakeFiles/ALL_BUILD.dir
 C:/Users/nikit/OneDrive/Рабочий стол/Green-Threads-lite/build/CMakeFiles/ZERO_CHECK.dir
