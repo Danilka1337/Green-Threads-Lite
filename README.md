@@ -10,6 +10,8 @@ Green Threads Lite - это легковесная библиотека для �
 
 1. **GreenThread** - класс, представляющий зеленый поток. Внутренне использует Windows Fiber API.
 2. **Scheduler** - планировщик, управляющий выполнением зеленых потоков и их переключением.
+3. **Mutex** - примитив синхронизации для взаимоисключающего доступа между потоками.
+4. **ConditionVariable** - примитив синхронизации для ожидания условий.
 
 ## Особенности
 
@@ -22,15 +24,15 @@ Green Threads Lite - это легковесная библиотека для �
 ## Требования
 
 - Windows операционная система
-- Компилятор с поддержкой C++11 или выше
+- Компилятор с поддержкой C++17 или выше
 - CMake для сборки проекта
 
 ## Сборка проекта
 
 1. Клонировать репозиторий:
 ```bash
-git clone https://github.com/Danilka1337/Green-Threads-Lite/
-cd Green-Threads-lite
+git clone https://github.com/Danilka1337/Green-Threads-Lite.git
+cd Green-Threads-Lite
 ```
 
 2. Создать папку для сборки и собрать проект:
@@ -48,73 +50,162 @@ cmake --build .
 ```cpp
 #include <Scheduler.hpp>
 #include <GreenThread.hpp>
+#include <Mutex.hpp>
+#include <ConditionVariable.hpp>
 ```
 
-### Создание и запуск зеленых потоков
+### Базовое использование
 
 ```cpp
 // Получение экземпляра планировщика
-auto& scheduler = GreenThreads::Scheduler::getInstance();
+auto& scheduler = GreenThreads::Scheduler::instance();
 
 // Создание зеленого потока
-scheduler.spawn([]() {
+auto thread = std::make_shared<GreenThreads::GreenThread>([]() {
     // Функция, выполняемая в потоке
     std::cout << "Hello from green thread!" << std::endl;
     
     // Передача управления другим потокам
-    GreenThreads::Scheduler::getInstance().yield();
+    GreenThreads::Scheduler::instance().yield();
     
     std::cout << "Green thread continues after yield" << std::endl;
 });
 
-// Запуск планировщика (блокирует текущий поток до завершения всех зеленых потоков)
+// Запуск потока
+thread->start();
+
+// Запуск планировщика
 scheduler.run();
 ```
 
-### Пример использования
+### Синхронизация с Mutex
+
+```cpp
+GreenThreads::Mutex mutex;
+
+// Блокирующий захват
+mutex.lock();
+// Критическая секция
+mutex.unlock();
+
+// С помощью RAII
+{
+    std::lock_guard<GreenThreads::Mutex> lock(mutex);
+    // Критическая секция
+}
+```
+
+### Условные переменные
+
+```cpp
+GreenThreads::Mutex mutex;
+GreenThreads::ConditionVariable cv;
+
+// Ожидание события
+{
+    std::unique_lock<GreenThreads::Mutex> lock(mutex);
+    cv.wait(lock); // Разблокирует mutex и ждет, пока не будет вызван notify
+}
+
+// Ожидание с таймаутом
+{
+    std::unique_lock<GreenThreads::Mutex> lock(mutex);
+    bool notified = cv.wait_for(lock, std::chrono::milliseconds(500));
+    if (!notified) {
+        // Истек таймаут, событие не произошло
+    }
+}
+
+// Уведомление потоков
+cv.notify_one(); // Разбудить один поток
+cv.notify_all(); // Разбудить все ожидающие потоки
+```
+
+## Пример: Производитель-Потребитель
 
 ```cpp
 #include <Scheduler.hpp>
+#include <GreenThread.hpp>
+#include <ConditionVariable.hpp>
+#include <Mutex.hpp>
 #include <iostream>
-#include <mutex>
-#include <string>
-#include <chrono>
-#include <thread>
+#include <queue>
 
 using namespace GreenThreads;
 
-// Мьютекс для синхронизированного вывода
-std::mutex coutMutex;
+// Общие ресурсы
+std::queue<int> dataQueue;
+Mutex queueMutex;
+ConditionVariable queueNotEmpty;
+ConditionVariable queueNotFull;
+constexpr int MAX_QUEUE_SIZE = 5;
 
-void safePrint(const std::string& message) {
-    std::lock_guard<std::mutex> lock(coutMutex);
-    std::cout << message << std::endl;
+// Производитель
+void producer() {
+    for (int i = 1; i <= 10; ++i) {
+        {
+            std::unique_lock<Mutex> lock(queueMutex);
+            
+            // Ждем, если очередь полна
+            while (dataQueue.size() >= MAX_QUEUE_SIZE) {
+                queueNotFull.wait(lock);
+            }
+            
+            // Добавляем данные
+            dataQueue.push(i);
+            std::cout << "Produced: " << i << std::endl;
+            
+            // Уведомляем потребителя
+            queueNotEmpty.notify_one();
+        }
+        
+        // Уступаем управление
+        Scheduler::instance().yield();
+    }
 }
 
-void worker(int id) {
-    safePrint("Worker " + std::to_string(id) + ": Started");
-    
-    for (int i = 0; i < 3; ++i) {
-        safePrint("Worker " + std::to_string(id) + ": Step " + std::to_string(i));
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        Scheduler::getInstance().yield();
+// Потребитель
+void consumer() {
+    for (int i = 0; i < 10; ++i) {
+        int data;
+        
+        {
+            std::unique_lock<Mutex> lock(queueMutex);
+            
+            // Ждем данных
+            while (dataQueue.empty()) {
+                queueNotEmpty.wait(lock);
+            }
+            
+            // Извлекаем данные
+            data = dataQueue.front();
+            dataQueue.pop();
+            
+            // Уведомляем производителя
+            queueNotFull.notify_one();
+        }
+        
+        // Обрабатываем данные
+        std::cout << "Consumed: " << data << std::endl;
+        
+        // Уступаем управление
+        Scheduler::instance().yield();
     }
-    
-    safePrint("Worker " + std::to_string(id) + ": Finished");
 }
 
 int main() {
-    auto& scheduler = Scheduler::getInstance();
-
-    // Создание нескольких рабочих потоков
-    for (int i = 0; i < 3; ++i) {
-        scheduler.spawn([i]() { worker(i); });
-    }
-
-    safePrint("Starting scheduler...");
+    auto& scheduler = Scheduler::instance();
+    
+    // Создаем и запускаем потоки
+    auto producerThread = std::make_shared<GreenThread>(producer);
+    auto consumerThread = std::make_shared<GreenThread>(consumer);
+    
+    producerThread->start();
+    consumerThread->start();
+    
+    // Запускаем планировщик
     scheduler.run();
-    safePrint("All threads completed");
-
+    
     return 0;
 }
 ```
@@ -124,23 +215,7 @@ int main() {
 1. **Кооперативная многозадачность**: Потоки должны явно вызывать `yield()` для передачи управления другим потокам.
 2. **Планирование потоков**: Потоки помещаются в очередь готовых к выполнению, и планировщик управляет их выполнением.
 3. **Fiber API**: Внутренне потоки реализованы с использованием Windows Fiber API, что обеспечивает эффективное переключение контекста.
-
-## Архитектура
-
-### GreenThread
-
-Класс `GreenThread` представляет собой зеленый поток и инкапсулирует:
-- Функцию, выполняемую в потоке (`func_`)
-- Windows Fiber для переключения контекста (`fiber_`)
-- Состояние завершения (`finished_`)
-
-### Scheduler
-
-Класс `Scheduler` управляет зелеными потоками:
-- Создает и хранит потоки
-- Поддерживает очередь готовых к выполнению потоков
-- Управляет переключением между потоками
-- Реализует паттерн Singleton для глобального доступа
+4. **Синхронизация**: Библиотека предоставляет примитивы синхронизации (`Mutex`, `ConditionVariable`).
 
 ## Ограничения
 
@@ -155,4 +230,6 @@ int main() {
 - Избегайте длительных блокирующих операций
 - Используйте мьютексы для синхронизации доступа к общим ресурсам
 - Для задач ввода-вывода рассмотрите асинхронные операции с коллбэками
+
+
 
