@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(GreenThreads
     src/GreenThread.cpp
     src/Scheduler.cpp
+    src/ConditionVariable.cpp
+    src/Mutex.cpp
 )
 
 target_include_directories(GreenThreads
@@ -14,8 +16,8 @@ target_include_directories(GreenThreads
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-add_executable(simple_test examples/simple_test.cpp)
-target_link_libraries(simple_test GreenThreads)
+add_executable(advanced_example examples/advanced_example.cpp)
+target_link_libraries(advanced_example GreenThreads)
 
 install(TARGETS GreenThreads
     LIBRARY DESTINATION lib
@@ -26,4 +28,4 @@ install(TARGETS GreenThreads
 install(DIRECTORY include/
     DESTINATION include
     FILES_MATCHING PATTERN "*.hpp"
-) 
+)  
