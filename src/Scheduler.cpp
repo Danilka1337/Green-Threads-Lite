@@ -2,145 +2,202 @@
 #include "GreenThread.hpp"
 #include <iostream>
 #include <stdexcept>
+#include <algorithm>
 
 namespace GreenThreads {
 
-Scheduler& Scheduler::getInstance() {
+Scheduler& Scheduler::instance() {
     static Scheduler instance;
     return instance;
 }
 
-Scheduler::Scheduler() 
-    : running_(false)
-    , mainFiber_(nullptr)
-    , currentThread_(nullptr) {
-    workerThreads_.reserve(MAX_THREADS);
-}
+Scheduler::Scheduler() : schedulerFiber_(nullptr), running_(false) {}
 
 Scheduler::~Scheduler() {
     stop();
+    if (schedulerFiber_) {
+        DeleteFiber(schedulerFiber_);
+        schedulerFiber_ = nullptr;
+    }
 }
 
-void Scheduler::spawn(std::function<void()> func) {
+std::shared_ptr<GreenThread> Scheduler::getCurrentThread() const {
+    return currentThread_.lock();
+}
+
+void Scheduler::addThread(std::shared_ptr<GreenThread> thread) {
+    if (!thread) return;
+    
     std::lock_guard<std::mutex> lock(queueMutex_);
-    auto thread = std::make_shared<GreenThread>(func);
-    readyQueue_.push(thread);
-    queueCV_.notify_one();
+    readyQueue_.push_back(std::move(thread));
 }
 
-void Scheduler::yield() {
-    if (!GreenThread::current()) {
-        throw std::runtime_error("yield() called outside of a green thread");
-    }
-
-    std::shared_ptr<GreenThread> nextThread;
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        if (readyQueue_.empty()) {
-            return;
+void Scheduler::start() {
+    if (running_) return;
+    
+    std::cout << "Scheduler::start() called" << std::endl;
+    running_ = true;
+    
+    if (!GreenThread::getMainFiber()) {
+        std::cout << "Converting main thread to fiber" << std::endl;
+        LPVOID mainFiber = ConvertThreadToFiber(nullptr);
+        if (!mainFiber) {
+            DWORD error = GetLastError();
+            if (error == ERROR_ALREADY_FIBER) {
+                std::cout << "Thread is already a fiber, getting current fiber" << std::endl;
+                mainFiber = GetCurrentFiber();
+            } else {
+                std::cerr << "Failed to convert main thread to fiber, error: " << error << std::endl;
+                throw std::runtime_error("Failed to convert main thread to fiber");
+            }
         }
-        
-        nextThread = readyQueue_.front();
-        readyQueue_.pop();
-        
-        if (currentThread_ && !currentThread_->isFinished()) {
-            readyQueue_.push(currentThread_);
+        std::cout << "Setting main fiber: " << mainFiber << std::endl;
+        GreenThread::setMainFiber(mainFiber);
+    }
+    
+    if (!schedulerFiber_) {
+        std::cout << "Creating scheduler fiber" << std::endl;
+        schedulerFiber_ = CreateFiber(0, SchedulerFiberStart, this);
+        if (!schedulerFiber_) {
+            DWORD error = GetLastError();
+            std::cerr << "Failed to create scheduler fiber, error: " << error << std::endl;
+            throw std::runtime_error("Failed to create scheduler fiber");
         }
+        std::cout << "Scheduler fiber created: " << schedulerFiber_ << std::endl;
     }
     
-    auto prevThread = currentThread_;
-    
-    currentThread_ = nextThread;
-    
-    if (nextThread) {
-        nextThread->resume();
-    }
-    
-    currentThread_ = prevThread;
+    std::cout << "Switching to scheduler fiber" << std::endl;
+    SwitchToFiber(schedulerFiber_);
+    std::cout << "Returned from scheduler fiber" << std::endl;
 }
 
 void Scheduler::run() {
-    if (running_) {
-        return;
-    }
-
-    running_ = true;
-    
-    if (!IsThreadAFiber()) {
-        mainFiber_ = ConvertThreadToFiber(nullptr);
-        if (!mainFiber_) {
-            throw std::runtime_error("Failed to convert thread to fiber");
-        }
-    } else {
-        mainFiber_ = GetCurrentFiber();
-    }
-
     try {
+        if (!schedulerFiber_) {
+            std::cout << "Setting current fiber as scheduler fiber" << std::endl;
+            schedulerFiber_ = GetCurrentFiber();
+            if (!schedulerFiber_) {
+                std::cerr << "ERROR: Failed to get current fiber" << std::endl;
+                throw std::runtime_error("Failed to get current fiber");
+            }
+            std::cout << "Current fiber as scheduler: " << schedulerFiber_ << std::endl;
+        }
+        
+        std::cout << "Entering scheduler loop" << std::endl;
         while (running_) {
-            std::shared_ptr<GreenThread> threadToRun;
+            std::shared_ptr<GreenThread> thread = nullptr;
+            bool needSleep = false;
             
-            {
+            try {
                 std::lock_guard<std::mutex> lock(queueMutex_);
+                std::cout << "Queue size: " << readyQueue_.size() << ", Running threads: " << runningThreads_.size() << std::endl;
+                
                 if (readyQueue_.empty()) {
-                    break;
+                    if (runningThreads_.empty()) {
+                        std::cout << "No more threads to run, exiting scheduler" << std::endl;
+                        break;
+                    }
+                    needSleep = true;
+                    std::cout << "No ready threads, waiting..." << std::endl;
+                } else {
+                    thread = readyQueue_.front();
+                    readyQueue_.pop_front();
+                    runningThreads_.insert(thread);
+                    std::cout << "Got thread ID " << thread->getId() << " from queue" << std::endl;
                 }
-                threadToRun = readyQueue_.front();
-                readyQueue_.pop();
-                currentThread_ = threadToRun;
+            } catch (const std::exception& e) {
+                std::cerr << "ERROR in scheduler queue management: " << e.what() << std::endl;
+                throw;
             }
-
-            if (threadToRun) {
+            
+            if (needSleep) {
+                Sleep(1);
+                continue;
+            }
+            
+            if (thread) {
                 try {
-                    std::cout << "Resuming thread..." << std::endl;
-                    threadToRun->resume();
-                    std::cout << "Returned from resume" << std::endl;
+                    if (!thread->isFinished()) {
+                        std::cout << "About to resume thread " << thread->getId() << std::endl;
+                        currentThread_ = thread;
+                        thread->resume();
+                        std::cout << "Thread " << thread->getId() << " resumed and returned" << std::endl;
+                        
+                        if (thread->isFinished()) {
+                            std::lock_guard<std::mutex> lock(queueMutex_);
+                            runningThreads_.erase(thread);
+                            std::cout << "Thread " << thread->getId() << " finished and removed from scheduler" << std::endl;
+                        } else if (thread->getState() == GreenThread::State::READY) {
+                            std::lock_guard<std::mutex> lock(queueMutex_);
+                            readyQueue_.push_back(thread);
+                            std::cout << "Thread " << thread->getId() << " yielded, putting back in queue" << std::endl;
+                        } else {
+                            std::cout << "Thread " << thread->getId() << " in state: " << static_cast<int>(thread->getState()) << std::endl;
+                        }
+                    } else {
+                        std::lock_guard<std::mutex> lock(queueMutex_);
+                        runningThreads_.erase(thread);
+                        std::cout << "Thread " << thread->getId() << " was already finished, removing" << std::endl;
+                    }
                 } catch (const std::exception& e) {
-                    std::cerr << "Thread error: " << e.what() << std::endl;
-                }
-
-                if (!threadToRun->isFinished()) {
-                    std::lock_guard<std::mutex> lock(queueMutex_);
-                    readyQueue_.push(threadToRun);
+                    std::cerr << "ERROR in thread execution: " << e.what() << std::endl;
+                    throw;
                 }
             }
             
-            currentThread_.reset();
+            Sleep(0);
+        }
+        
+        LPVOID mainFiber = GreenThread::getMainFiber();
+        if (mainFiber) {
+            std::cout << "Switching back to main fiber" << std::endl;
+            SwitchToFiber(mainFiber);
+            std::cout << "Returned from main fiber (this should not happen)" << std::endl;
+        } else {
+            std::cerr << "ERROR: No main fiber to return to!" << std::endl;
         }
     } catch (const std::exception& e) {
-        std::cerr << "Scheduler error: " << e.what() << std::endl;
-        if (mainFiber_ && IsThreadAFiber()) {
-            ConvertFiberToThread();
+        std::cerr << "FATAL ERROR in scheduler: " << e.what() << std::endl;
+        
+        LPVOID mainFiber = GreenThread::getMainFiber();
+        if (mainFiber) {
+            std::cerr << "Attempting emergency return to main fiber" << std::endl;
+            SwitchToFiber(mainFiber);
         }
-        throw;
+    } catch (...) {
+        std::cerr << "UNKNOWN FATAL ERROR in scheduler" << std::endl;
+        
+        LPVOID mainFiber = GreenThread::getMainFiber();
+        if (mainFiber) {
+            std::cerr << "Attempting emergency return to main fiber" << std::endl;
+            SwitchToFiber(mainFiber);
+        }
     }
+}
 
-    if (mainFiber_ && IsThreadAFiber()) {
-        ConvertFiberToThread();
+void WINAPI Scheduler::SchedulerFiberStart(LPVOID param) {
+    Scheduler* scheduler = static_cast<Scheduler*>(param);
+    if (scheduler) {
+        scheduler->run();
     }
 }
 
 void Scheduler::stop() {
-    if (!running_) {
-        return;
-    }
-
     running_ = false;
-    queueCV_.notify_all();
 }
 
-void Scheduler::schedule() {
-    std::unique_lock<std::mutex> lock(queueMutex_);
-    while (readyQueue_.empty() && running_) {
-        queueCV_.wait(lock);
-    }
+LPVOID Scheduler::getSchedulerFiber() const {
+    return schedulerFiber_;
+}
 
-    if (!running_) {
-        return;
-    }
-
-    if (!readyQueue_.empty()) {
-        currentThread_ = readyQueue_.front();
-        readyQueue_.pop();
+void Scheduler::yield() {
+    auto thread = currentThread_.lock();
+    if (thread) {
+        thread->yield();
+    } else if (schedulerFiber_) {
+        if (GetCurrentFiber() != schedulerFiber_) {
+            SwitchToFiber(schedulerFiber_);
+        }
     }
 }
 
