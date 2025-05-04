@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/d5097020-2749-49de-a69a-4eadfe8aa3ad" alt="Green Threads Logo" width="800">
-</p>
+# Green Threads Lite
 
 ## Описание проекта
 
